@@ -1,5 +1,5 @@
 // written by Simon Socolow
-// running the 'start()' function kicks off the OAuth2
+// running 'startOAuth(textToSet)' kicks off the OAuth2 and sets textToSet.value = plaintext event list
 // and the string of their events for the next 10 days is stored in CALENDAR_RESPONSE
 
 let access_token = "";
@@ -50,13 +50,14 @@ function convertToNice(date) {
 
 // returns a string with all the events in all the calendars in the next n days
 // that have specific start and end times
+// and order them by time (soonest first)
 async function grabEvents(n, ids) {
     let allevents = [];
     for (let calID of ids) {
 
         let now = new Date();
         let future = new Date(now.getTime() + n * 24 * 60 * 60 * 1000);
-        let url = "https://www.googleapis.com/calendar/v3/calendars/" + calID + "/events?" + "timeMin=" + now.toISOString() + "&timeMax=" + future.toISOString();
+        let url = "https://www.googleapis.com/calendar/v3/calendars/" + calID + "/events?" + "timeMin=" + now.toISOString() + "&timeMax=" + future.toISOString() + "&singleEvents=True";
 
         try {
             const res = await fetch(url, {
@@ -70,8 +71,10 @@ async function grabEvents(n, ids) {
             // only put in events that aren't all-day
             for (let event of data["items"]) {
                 console.log(event);
-                if (event.start.hasOwnProperty("dateTime")) {
-                    allevents.push(event);
+                if (event.hasOwnProperty("start")) {
+                    if (event.start.hasOwnProperty("dateTime")) {
+                        allevents.push(event);
+                    }
                 }
             }
 
@@ -80,21 +83,40 @@ async function grabEvents(n, ids) {
         }
     }
 
-    console.log(allevents);
+    allevents.sort(compareEvents);
+    console.log("after sorting: ", allevents);
     return allevents;
 }
 
-// return all calendar ids
+// compare function to sort events by time
+function compareEvents(a, b) {
+    aTime = new Date(a.start.dateTime);
+    bTime = new Date(b.end.dateTime);
+
+    if (aTime.getTime() < bTime.getTime()) {
+        return -1;
+    }
+    else if (aTime.getTime() > bTime.getTime()) {
+        return 1;
+    } else {
+        console.log('hh');
+        return 0;
+    }
+}
+
+// return the calendar ids of all owned calendars
 function getIDs(xresponse) {
     let cals = xresponse["items"];
     let ids = [];
     for (let cal of cals) {
         console.log("id: " + cal.id);
+        if (cal.accessRole === "owner") {
 
-        if (cal.id.includes("#")) {
-            cal.id = cal.id.replace(/#/g, '%23');
+            if (cal.id.includes("#")) {
+                cal.id = cal.id.replace(/#/g, '%23');
+            }
+            ids.push(cal.id);
         }
-        ids.push(cal.id);
     }
 
     return ids;
