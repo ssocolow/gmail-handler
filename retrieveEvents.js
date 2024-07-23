@@ -1,39 +1,99 @@
 // written by Simon Socolow
 // running 'startOAuth(textToSet)' kicks off the OAuth2 and sets textToSet.value = plaintext event list
-// and the string of their events for the next 10 days is stored in CALENDAR_RESPONSE
 
 let access_token = "";
 
-// using the OAuth2 response (with access token inside) get the user's calendar events
-async function getCalEvents(response) {
+// using the OAuth2 response (with access token inside) get the user's mail history
+async function listMSGs(response) {
     access_token = response.access_token;
 
     try {
-        const res = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?q=to:' + OTHERADDRESS + "&maxResults=" + EMAILNUM, {
             headers: {
                 'Authorization': `Bearer ${access_token}`
             }
         });
         const data = await res.json();
-        console.log("GETTING ALL CALS: ", data);
-        const ids = getIDs(data);
-        let allevents = await grabEvents(10, ids);
-        return formatAndRenderEvents(allevents);
+        console.log("GETTING MESSAGES BETWEEN YOU AND " + OTHERADDRESS + ": ", data);
+        let msgs = getMessages(data.messages);
+        return formatAndRenderEvents(msgs);
     } catch (error) {
-        console.error("Error fetching calendar events:", error);
+        console.error("Error fetching:", error);
     }
 }
 
-// take in array of events and return them in a nice string
-// also logs it to the console
-function formatAndRenderEvents(allevents) {
-    let ret = "No meetings should be scheduled at the same time as the following events:\n";
-    for (let i = 0; i < allevents.length; i++) {
-        let startTime = new Date(allevents[i].start.dateTime);
-        let endTime = new Date(allevents[i].end.dateTime);
-        ret += "Event " + (i + 1) + " starts at " + convertToNice(startTime) + " and ends at " + convertToNice(endTime) + "\n";
+// try to decode base64
+// function decodeBase64(str) {
+//     try {
+//         return decodeURIComponent(atob(str));
+//     } catch (e) {
+//         console.log(str);
+//         console.error("Error decoding Base64 string:", e);
+//         return null;
+//     }
+// }
+
+// Function to decode a Base64 string to Unicode
+function decodeBase64ToUnicode(base64) {
+    const binaryString = atob(base64);
+    const binaryBytes = new Uint8Array([...binaryString].map(char => char.charCodeAt(0)));
+    const decodedString = new TextDecoder().decode(binaryBytes);
+    return decodedString;
+}
+
+// get plaintext from email
+function extractPlaintext(payload) {
+    let text = '';
+
+    for (let part of payload.parts) {
+        if (part.mimeType === 'text/plain') {
+            str = part.body.data.replace(/-/g, '+').replace(/_/g, '/');
+            text += decodeBase64ToUnicode(str) + "\n";
+        }
+
+        // if (payload.parts) {
+        //     for (const part of payload.parts) {
+        //         if (part.mimeType === 'text/plain') {
+        //             return decodeBase64(part.body.data);
+        //         }
+        //     }
+        // }
     }
-    console.log(ret);
+    return text;
+}
+
+//from the message id and threadId, get the actual messages
+async function getMessages(data) {
+    let msgs = [];
+    for (let obj of data) {
+        let url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + obj.id + "?format=full";
+
+        try {
+            const res = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${access_token}`
+                }
+            });
+            const data = await res.json();
+            console.log(obj.id + " MAIL: ", data);
+
+            let plaintext = extractPlaintext(data.payload);
+            console.log("pt: ", plaintext);
+            msgs.push(plaintext);
+
+        } catch (error) {
+            console.error("Error fetching emails:", error);
+        }
+    }
+    return msgs;
+}
+
+// makes the array of messages one string
+function formatAndRenderEvents(msgs) {
+    let ret = "Email history\n";
+    for (let i = 0; i < msgs.length; i++) {
+        ret += msgs[i];
+    }
     return ret;
 }
 
@@ -88,53 +148,23 @@ async function grabEvents(n, ids) {
     return allevents;
 }
 
-// compare function to sort events by time
-function compareEvents(a, b) {
-    aTime = new Date(a.start.dateTime);
-    bTime = new Date(b.end.dateTime);
 
-    if (aTime.getTime() < bTime.getTime()) {
-        return -1;
-    }
-    else if (aTime.getTime() > bTime.getTime()) {
-        return 1;
-    } else {
-        console.log('hh');
-        return 0;
-    }
-}
 
-// return the calendar ids of all owned calendars
-function getIDs(xresponse) {
-    let cals = xresponse["items"];
-    let ids = [];
-    for (let cal of cals) {
-        console.log("id: " + cal.id);
-        if (cal.accessRole === "owner") {
 
-            if (cal.id.includes("#")) {
-                cal.id = cal.id.replace(/#/g, '%23');
-            }
-            ids.push(cal.id);
-        }
-    }
-
-    return ids;
-}
-
+// triggers the oath implicit flow
 async function startOAuth(textToSet) {
 
     // init the client
     const client = await google.accounts.oauth2.initTokenClient({
-        client_id: '934829107671-0ph2tdfq3babga4qo28hob8i1shs8l8v.apps.googleusercontent.com',
+        client_id: '757937405503-4qnrh6if71vrbpl8es2s10tg8iqkg0ap.apps.googleusercontent.com',
         callback: async (response) => {
             console.log(response);
-            textToSet.value = await getCalEvents(response);
+            textToSet.value = await listMSGs(response);
         },
         error_callback: (err) => {
             console.error("Error: " + err);
         },
-        scope: 'https://www.googleapis.com/auth/calendar.readonly',
+        scope: 'https://www.googleapis.com/auth/gmail.readonly',
     });
 
     // trigger the auth event

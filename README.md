@@ -1,2 +1,2 @@
-# [gcal-handler](https://simonsocolow.com/gcal-handler/)
-A simple web app to automatically output your upcoming events
+# [gmail-handler](https://simonsocolow.com/gmail-handler/)
+A simple web app to automatically fetch all your email correspondance with one address from Gmail and display as plaintext.
