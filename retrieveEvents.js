@@ -15,7 +15,7 @@ async function listMSGs(response) {
         });
         const data = await res.json();
         console.log("GETTING MESSAGES BETWEEN YOU AND " + OTHERADDRESS + ": ", data);
-        let msgs = getMessages(data.messages);
+        let msgs = await getMessages(data.messages);
         return formatAndRenderEvents(msgs);
     } catch (error) {
         console.error("Error fetching:", error);
@@ -44,22 +44,27 @@ function decodeBase64ToUnicode(base64) {
 // get plaintext from email
 function extractPlaintext(payload) {
     let text = '';
+    text += "From: " + payload.headers.find(obj => obj.name === "From").value + "\n";
+    text += "To: " + payload.headers.find(obj => obj.name === "To").value + "\n";
+    text += "Subject: " + payload.headers.find(obj => obj.name === "Subject").value + "\n";
+    text += "Body:\n";
 
     for (let part of payload.parts) {
         if (part.mimeType === 'text/plain') {
             str = part.body.data.replace(/-/g, '+').replace(/_/g, '/');
             text += decodeBase64ToUnicode(str) + "\n";
         }
-
-        // if (payload.parts) {
-        //     for (const part of payload.parts) {
-        //         if (part.mimeType === 'text/plain') {
-        //             return decodeBase64(part.body.data);
-        //         }
-        //     }
-        // }
+        if (part.mimeType === 'multipart/alternative') {
+            for (let subPart of part.parts) {
+                if (subPart.mimeType === 'text/plain') {
+                    str = subPart.body.data.replace(/-/g, '+').replace(/_/g, '/');
+                    text += decodeBase64ToUnicode(str) + "\n";
+                }
+            }
+        }
+        text += "\n";
+        return text;
     }
-    return text;
 }
 
 //from the message id and threadId, get the actual messages
@@ -90,7 +95,7 @@ async function getMessages(data) {
 
 // makes the array of messages one string
 function formatAndRenderEvents(msgs) {
-    let ret = "Email history\n";
+    let ret = "";
     for (let i = 0; i < msgs.length; i++) {
         ret += msgs[i];
     }
